@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Data Quality & Anomaly Detection Report - {{ filename }}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background: #f8fafc; color: #1e293b; }
+    .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 32px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    h1, h2, h3 { color: #0f172a; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .badge-error { background: #fee2e2; color: #991b1b; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-info { background: #e0f2fe; color: #075985; }
+    .score-box { display: flex; gap: 24px; margin: 24px 0; }
+    .score-card { flex: 1; padding: 20px; border-radius: 8px; background: #f1f5f9; text-align: center; }
+    .score-card .val { font-size: 36px; font-weight: 700; color: #2563eb; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
+    th { background: #f8fafc; }
+    .finding-block { border-left: 4px solid #3b82f6; padding: 12px 16px; margin-bottom: 16px; background: #f8fafc; border-radius: 0 4px 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Data Quality & Anomaly Detection Report</h1>
+    <p><strong>Dataset:</strong> {{ filename }} | <strong>Generated:</strong> {{ generated_at }}</p>
+
+    <div class="score-box">
+      <div class="score-card">
+        <div>Initial Quality Score</div>
+        <div class="val">{{ score_before.overall_score }} / 100</div>
+      </div>
+      {% if score_after %}
+      <div class="score-card">
+        <div>Cleaned Quality Score</div>
+        <div class="val" style="color: #16a34a;">{{ score_after.overall_score }} / 100</div>
+      </div>
+      {% endif %}
+    </div>
+    <div style="background: #f1f5f9; border-left: 4px solid #2563eb; padding: 12px 16px; border-radius: 4px; font-size: 13px; margin-bottom: 24px;">
+      <strong>Documented Scoring Formula:</strong> Overall Score = Average(Column Scores) • Column Score = max(0, 100 − Σ [Affected % × Weight]).
+    </div>
+
+    <h3>Calibrated Scoring Weights (Constitution v1.2.0)</h3>
+    <table style="margin-bottom: 28px;">
+      <thead>
+        <tr>
+          <th>Anomaly Type</th>
+          <th>Severity Weight</th>
+          <th>Remediation Governance</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Arithmetic Conflict</strong></td><td>2.0</td><td>Exact Recalculation (quantity × price)</td></tr>
+        <tr><td><strong>Invalid Value (Dates, Phone, Email, Bounds)</strong></td><td>1.5</td><td>Manual Review Required</td></tr>
+        <tr><td><strong>Missing Value</strong></td><td>1.0</td><td>Rating/Email/Phone: Honest Null Preserved</td></tr>
+        <tr><td><strong>Duplicate (Tier A Exact)</strong></td><td>1.0</td><td>Auto-Drop Duplicate Row</td></tr>
+        <tr><td><strong>Duplicate (Tier B Key Collision)</strong></td><td>1.0</td><td>Manual Review Required (Prevent Data Loss)</td></tr>
+        <tr><td><strong>Duplicate (Tier C Repeat Customer)</strong></td><td>0.0 (Not an Issue)</td><td>Business as Usual / Preserved</td></tr>
+        <tr><td><strong>Inconsistent Text</strong></td><td>0.5</td><td>Auto-Fixable Normalization (Title Case / Trim)</td></tr>
+        <tr><td><strong>Numeric Outlier</strong></td><td>0.5</td><td>Flagged for Review (Never Deleted)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Executive Summary of Findings</h2>
+    <p>Total issues detected: <strong>{{ findings|length }}</strong></p>
+
+    {% for f in findings %}
+    <div class="finding-block" style="border-left: 4px solid {% if f.metadata.status == 'not_an_issue' %}#16a34a{% elif f.severity == 'error' %}#dc2626{% else %}#f59e0b{% endif %};">
+      <div>
+        {% if f.metadata.status == 'not_an_issue' %}
+        <span class="badge" style="background: #dcfce7; color: #15803d;">NOT AN ISSUE</span>
+        {% else %}
+        <span class="badge badge-{{ f.severity }}">{{ f.severity }}</span>
+        {% endif %}
+        {% if f.metadata.tier %}
+        <span class="badge" style="background: #f1f5f9; color: #334155; margin-left: 4px;">{{ f.metadata.tier|upper }}</span>
+        {% endif %}
+        <strong>Family:</strong> {{ f.issue_family|capitalize }} | 
+        <strong>Columns:</strong> {{ f.affected_columns|join(', ') }} |
+        <strong>Affected Rows:</strong> {{ f.affected_row_indices|length }}
+      </div>
+      {% if explanations[f.finding_id|string] %}
+      <p><em>{{ explanations[f.finding_id|string].explanation_text }}</em></p>
+      <p><strong>Business Impact:</strong> {{ explanations[f.finding_id|string].business_impact }}</p>
+      <p><strong>Recommended Fix:</strong> {{ explanations[f.finding_id|string].recommended_action }}</p>
+      {% if explanations[f.finding_id|string].pandas_code %}
+      <p><strong>Pandas Remediation Code:</strong></p>
+      <pre style="background:#0f172a;color:#f8fafc;padding:8px 12px;border-radius:4px;font-size:12px;overflow-x:auto;">{{ explanations[f.finding_id|string].pandas_code }}</pre>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <h2>Applied Transformations Log</h2>
+    {% if transformation_log %}
+    <table>
+      <thead>
+        <tr>
+          <th>Operation ID</th>
+          <th>Type</th>
+          <th>Columns</th>
+          <th>Rows Affected</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for op in transformation_log %}
+        <tr>
+          <td>{{ op.operation_id }}</td>
+          <td>{{ op.operation_type }}</td>
+          <td>{{ op.affected_columns|join(', ') }}</td>
+          <td>{{ op.affected_row_indices|length }}</td>
+          <td>{{ op.applied_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No automated cleaning transformations were applied.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

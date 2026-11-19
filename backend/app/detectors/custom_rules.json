@@ -1,0 +1,93 @@
+[
+  {
+    "rule_id": "rule_9a1ff7b1",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  },
+  {
+    "rule_id": "rule_462fcc72",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  },
+  {
+    "rule_id": "rule_dbb3e24e",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  },
+  {
+    "rule_id": "rule_dd7f855f",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  },
+  {
+    "rule_id": "rule_6502aea9",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  },
+  {
+    "rule_id": "rule_9e53d674",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  },
+  {
+    "rule_id": "rule_41db8eac",
+    "rule_name": "Adaptive Detector for status",
+    "target_columns": [
+      "status"
+    ],
+    "pattern": "UNKNOWN_CORRUPT_TAG",
+    "pattern_type": "anomaly_regex",
+    "severity": "warning",
+    "description": "Dynamically synthesized rule flagging novel corrupt tokens in 'status'.",
+    "remediation_code": "# Remediate novel anomaly in 'status'\ndf.loc[df['status'].astype(str).str.contains(r'UNKNOWN_CORRUPT_TAG', na=False), 'status'] = None",
+    "is_active": true
+  }
+]

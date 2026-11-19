@@ -1,0 +1,712 @@
+openapi: "3.1.0"
+info:
+  title: AI Data Quality & Anomaly Detection Agent API
+  version: "1.0.0"
+  description: >
+    REST API for the hackathon data-quality web application.
+    All endpoints are session-scoped. Create a session by uploading a file,
+    then chain the remaining endpoints using the returned session_id.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+paths:
+
+  /health:
+    get:
+      operationId: health_check
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+
+  /upload:
+    post:
+      operationId: upload_file
+      summary: Upload a CSV file and create a new session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: File accepted; session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: File rejected (invalid format, too large, empty, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+
+  /sessions/{session_id}/profile:
+    get:
+      operationId: get_profile
+      summary: Retrieve column profiles for the uploaded dataset
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Column profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ColumnProfile"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/detect:
+    post:
+      operationId: run_detection
+      summary: Run all anomaly detectors and relational deduplication on the dataset
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                primary_key:
+                  type: string
+                  description: Optional primary key column override (defaults to auto-detected candidate)
+                entity_key:
+                  type: string
+                  description: Optional customer entity key column override (defaults to auto-detected candidate)
+                arithmetic_tolerance:
+                  type: number
+                  default: 0.01
+                  description: Maximum difference allowed before flagging qty * unit_price != total
+                outlier_iqr_multiplier:
+                  type: number
+                  default: 1.5
+                  description: IQR fence multiplier (default 1.5)
+                fuzzy_threshold:
+                  type: integer
+                  default: 85
+                  description: RapidFuzz WRatio threshold for near-duplicate / inconsistency detection (0–100)
+      responses:
+        "200":
+          description: Detection complete; findings returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  total_findings:
+                    type: integer
+                  findings:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Finding"
+                  quality_score:
+                    $ref: "#/components/schemas/DatasetQualityScore"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/explain:
+    get:
+      operationId: get_explanations
+      summary: Retrieve AI-generated (or fallback) explanations for all findings
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Explanations (AI-generated or deterministic fallback)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  explanations:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/Explanation"
+                    description: "Keys are finding_id strings"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/clean:
+    get:
+      operationId: list_cleaning_operations
+      summary: List proposed cleaning operations and their current status
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Proposed cleaning operations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  operations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CleaningOperation"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/clean/preview:
+    get:
+      operationId: preview_cleaning_operation
+      summary: Preview the row-level diff for a proposed cleaning operation
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+        - name: operation_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Row-level before/after diff
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation_id:
+                    type: string
+                  diff:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CellDiff"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/clean/approve:
+    post:
+      operationId: approve_cleaning_operation
+      summary: Approve and apply one or more cleaning operations
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - operation_ids
+              properties:
+                operation_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: List of operation IDs to approve; pass all IDs for bulk approval
+      responses:
+        "200":
+          description: Operations applied; updated score returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applied_operations:
+                    type: array
+                    items:
+                      type: string
+                  quality_score_after:
+                    $ref: "#/components/schemas/DatasetQualityScore"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/clean/apply-all-low-risk:
+    post:
+      operationId: apply_all_low_risk_clean
+      summary: Batch-apply all pending low-risk cleaning operations (whitespace, casing normalization)
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: All low-risk operations applied; updated score returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applied_operations:
+                    type: array
+                    items:
+                      type: string
+                  quality_score_after:
+                    $ref: "#/components/schemas/DatasetQualityScore"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/clean/undo:
+    post:
+      operationId: undo_last_cleaning_operation
+      summary: Undo the most recently applied cleaning operation
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Last operation undone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  undone_operation_id:
+                    type: string
+                  quality_score_after:
+                    $ref: "#/components/schemas/DatasetQualityScore"
+        "409":
+          description: Nothing to undo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/score:
+    get:
+      operationId: get_quality_score
+      summary: Get current quality scores (before and after cleaning if applicable)
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Quality scores
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score_before:
+                    $ref: "#/components/schemas/DatasetQualityScore"
+                  score_after:
+                    oneOf:
+                      - $ref: "#/components/schemas/DatasetQualityScore"
+                      - type: "null"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/report:
+    get:
+      operationId: download_report
+      summary: Generate and download the HTML quality report
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: HTML report file
+          content:
+            text/html:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/export/csv:
+    get:
+      operationId: export_cleaned_csv
+      summary: Download the cleaned CSV with formula-injection escaping applied
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Cleaned CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+  /sessions/{session_id}/adaptive-learn:
+    post:
+      operationId: adaptive_learn_rules
+      summary: Autonomous AI agent identification of novel error patterns, rule synthesis, and persistent codebase update
+      parameters:
+        - $ref: "#/components/parameters/session_id"
+      responses:
+        "200":
+          description: Synthesized rules and updated findings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  synthesized_rules:
+                    type: array
+                    items:
+                      type: object
+                  new_findings_count:
+                    type: integer
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+
+components:
+
+  parameters:
+    session_id:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    SessionNotFound:
+      description: Session not found or expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+
+    ErrorResponse:
+      type: object
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+    UploadResponse:
+      type: object
+      required:
+        - session_id
+        - filename
+        - row_count
+        - column_count
+        - encoding
+        - parse_warnings
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        row_count:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        column_count:
+          type: integer
+          minimum: 1
+        encoding:
+          type: string
+        parse_warnings:
+          type: array
+          items:
+            type: string
+
+    ColumnProfile:
+      type: object
+      required:
+        - column_name
+        - inferred_type
+        - total_rows
+        - null_count
+        - null_pct
+        - unique_count
+        - example_values
+      properties:
+        column_name:
+          type: string
+        inferred_type:
+          type: string
+          enum: [numeric, categorical, datetime, identifier, text, unknown]
+        total_rows:
+          type: integer
+        null_count:
+          type: integer
+          minimum: 0
+        null_pct:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+        unique_count:
+          type: integer
+          minimum: 0
+        example_values:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+        stats:
+          oneOf:
+            - $ref: "#/components/schemas/NumericStats"
+            - $ref: "#/components/schemas/CategoricalStats"
+            - $ref: "#/components/schemas/DatetimeStats"
+            - type: "null"
+
+    NumericStats:
+      type: object
+      required: [min, max, mean, median, std, is_constant]
+      properties:
+        min: { type: number }
+        max: { type: number }
+        mean: { type: number }
+        median: { type: number }
+        std: { type: number }
+        is_constant: { type: boolean }
+
+    CategoricalStats:
+      type: object
+      required: [top_values]
+      properties:
+        top_values:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [value, count]
+            properties:
+              value: { type: string }
+              count: { type: integer }
+
+    DatetimeStats:
+      type: object
+      required: [min_date, max_date]
+      properties:
+        min_date: { type: string, format: date-time }
+        max_date: { type: string, format: date-time }
+        format_detected: { type: string }
+
+    Finding:
+      type: object
+      required:
+        - finding_id
+        - issue_family
+        - affected_columns
+        - affected_row_indices
+        - severity
+        - detection_methods
+        - example_rows
+        - metadata
+        - is_resolved
+      properties:
+        finding_id:
+          type: string
+          format: uuid
+        issue_family:
+          type: string
+          enum: [missing, duplicate, outlier, inconsistent]
+        affected_columns:
+          type: array
+          items:
+            type: string
+        affected_row_indices:
+          type: array
+          items:
+            type: integer
+        severity:
+          type: string
+          enum: [info, warning, error]
+        detection_methods:
+          type: array
+          items:
+            type: string
+        example_rows:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        is_resolved:
+          type: boolean
+
+    DatasetQualityScore:
+      type: object
+      required: [overall_score, column_scores, computed_at]
+      properties:
+        overall_score:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+        column_scores:
+          type: array
+          items:
+            $ref: "#/components/schemas/ColumnScore"
+        computed_at:
+          type: string
+          format: date-time
+
+    ColumnScore:
+      type: object
+      required: [column_name, score, deductions]
+      properties:
+        column_name: { type: string }
+        score:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+        deductions:
+          type: array
+          items:
+            type: object
+            required: [issue_family, severity, affected_pct, points_deducted]
+            properties:
+              issue_family: { type: string }
+              severity: { type: string }
+              affected_pct: { type: number }
+              points_deducted: { type: number }
+
+    MCPActionBlueprint:
+      type: object
+      required: [tool_name, parameters, business_summary, risk_level, rollback_action]
+      properties:
+        tool_name: { type: string }
+        parameters: { type: object }
+        business_summary: { type: string }
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+        rollback_action: { type: object }
+
+    PolyglotRegexInfo:
+      type: object
+      required: [domain, target_locales, regex_pattern, description]
+      properties:
+        domain:
+          type: string
+          enum: [phone, postal_code, date, general]
+        target_locales:
+          type: array
+          items: { type: string }
+        regex_pattern: { type: string }
+        description: { type: string }
+
+    Explanation:
+      type: object
+      required:
+        - finding_id
+        - is_ai_generated
+        - explanation_text
+        - business_impact
+        - recommended_action
+        - operation_hint
+        - requires_approval
+        - generated_at
+      properties:
+        finding_id: { type: string }
+        is_ai_generated: { type: boolean }
+        explanation_text: { type: string }
+        business_impact: { type: string }
+        recommended_action: { type: string }
+        recommended_regex: { type: string }
+        polyglot_regex:
+          $ref: "#/components/schemas/PolyglotRegexInfo"
+        mcp_action:
+          $ref: "#/components/schemas/MCPActionBlueprint"
+        operation_hint:
+          type: string
+          enum: [trim_whitespace, case_normalization, map_category, fill_missing, review_only]
+        requires_approval:
+          type: boolean
+          enum: [true]
+        generated_at:
+          type: string
+          format: date-time
+
+    CleaningOperation:
+      type: object
+      required:
+        - operation_id
+        - finding_id
+        - operation_type
+        - affected_columns
+        - affected_row_indices
+        - approval_status
+      properties:
+        operation_id: { type: string, format: uuid }
+        finding_id: { type: string }
+        operation_type:
+          type: string
+          enum: [trim_whitespace, case_normalization, map_category, fill_missing, mark_for_review]
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+          default: low
+        affected_columns:
+          type: array
+          items: { type: string }
+        affected_row_indices:
+          type: array
+          items: { type: integer }
+        preview_diff:
+          oneOf:
+            - type: array
+              items:
+                $ref: "#/components/schemas/CellDiff"
+            - type: "null"
+        approval_status:
+          type: string
+          enum: [pending, approved, rejected]
+        applied_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        original_values:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+
+    CellDiff:
+      type: object
+      required: [row_index, column_name, before, after]
+      properties:
+        row_index: { type: integer }
+        column_name: { type: string }
+        before: { type: string }
+        after: { type: string }
